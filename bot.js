@@ -1,5 +1,6 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
+const admin = require('firebase-admin');
 const db = require('./firebase');
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
@@ -12,41 +13,46 @@ console.log('🤖 Smile Movies Bot ishga tushdi!');
 // START COMMAND
 // ======================
 bot.onText(/\/start/, async (msg) => {
-  const chatId = msg.chat.id;
+  const chatId = msg.chat.id.toString();
 
-  // Foydalanuvchini Firebase users collection ga saqlash
-  await db.collection('users').doc(chatId.toString()).set({
+  // user saqlash
+  await db.collection('users').doc(chatId).set(
+    {
+      chatId,
+      startedAt: new Date(),
+    },
+    { merge: true }
+  );
+
+  bot.sendMessage(
     chatId,
-    startedAt: new Date()
-  }, { merge: true });
-
-  // Welcome sticker (o'zingiz Telegram’dan sticker ID oling)
-  // bot.sendSticker(chatId, 'STICKER_ID');
-
-  bot.sendMessage(chatId, `🎬 *Smile Movies* botiga xush kelibsiz!\n
-👤 Yaratuvchi: @mustafo_dv
-🍿 Bu botda kino ko‘rish uchun obuna bo'lish shart emas
-💡 Kino ko‘rish uchun kodi kiriting yoki /help ni bosing`, {
-    parse_mode: 'Markdown',
-    reply_markup: {
-      keyboard: [['Kodni yozish 🎞'], ['/help ℹ️']],
-      resize_keyboard: true,
-      one_time_keyboard: false
+    `🎬 <b>Smile Movies</b> botiga xush kelibsiz!<br><br>
+👤 Yaratuvchi: <b>@mustafo_dv</b><br>
+🍿 Bu botda kino ko‘rish uchun <b>obuna shart emas</b><br><br>
+💡 Kino ko‘rish uchun <b>kodi</b> ni yuboring yoki <b>/help</b> ni bosing`,
+    {
+      parse_mode: 'HTML',
+      reply_markup: {
+        keyboard: [['Kodni yozish 🎞'], ['/help ℹ️']],
+        resize_keyboard: true,
+      },
     }
-  });
+  );
 });
 
 // ======================
 // HELP COMMAND
 // ======================
 bot.onText(/\/help/, (msg) => {
-  bot.sendMessage(msg.chat.id, `💡 *Foydalanish qo'llanmasi:*\n
-1️⃣ Kanalga admin sifatida kino qo‘shiladi
-2️⃣ Har bir videoga caption (kod) beriladi
-3️⃣ Siz kodi yozganingizda video keladi
-4️⃣ Agar kodi topilmasa ❌ xabar chiqadi`, {
-    parse_mode: 'Markdown'
-  });
+  bot.sendMessage(
+    msg.chat.id,
+    `ℹ️ <b>Qanday ishlaydi?</b><br><br>
+1️⃣ Kanalga kino yuboriladi<br>
+2️⃣ Video caption — bu <b>kino kodi</b><br>
+3️⃣ Siz kodi yozasiz<br>
+4️⃣ Bot sizga kinoni yuboradi 🎬`,
+    { parse_mode: 'HTML' }
+  );
 });
 
 // ======================
@@ -59,14 +65,13 @@ bot.on('channel_post', async (post) => {
   const code = post.caption.trim();
   const fileId = post.video.file_id;
 
-  // Firestore ga saqlash
   await db.collection('movies').doc(code).set({
     fileId,
     createdAt: new Date(),
-    views: 0
+    views: 0,
   });
 
-  console.log(`🎬 Firebase saqlandi: ${code}`);
+  console.log(`🎬 Kino Firebase ga saqlandi: ${code}`);
 });
 
 // ======================
@@ -78,65 +83,80 @@ bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text.trim();
 
-  // Agar foydalanuvchi komandalarni bosgan bo‘lsa
+  // command bo‘lsa o‘tkazib yuboramiz
   if (text.startsWith('/')) return;
 
   const doc = await db.collection('movies').doc(text).get();
 
   if (!doc.exists) {
-    // Xato xabar
-    bot.sendMessage(chatId, '❌ Bunday kino kodi topilmadi\n💡 Iltimos kodi tekshirib qayta yozing');
-    return;
+    return bot.sendMessage(
+      chatId,
+      `❌ <b>Bunday kino kodi topilmadi</b><br>
+🔁 Iltimos, kodni tekshirib qayta yuboring`,
+      { parse_mode: 'HTML' }
+    );
   }
 
   const data = doc.data();
 
-  // Statistika: views ni oshirish
+  // views +1
   await db.collection('movies').doc(text).update({
-    views: require('firebase-admin').firestore.FieldValue.increment(1)
+    views: admin.firestore.FieldValue.increment(1),
   });
 
-  // Video yuborish
-  bot.sendVideo(chatId, data.fileId, { caption: `🎬 Kodi: ${text}\n✅ Yaxshi tomosha!` });
+  bot.sendVideo(chatId, data.fileId, {
+    caption: `🎬 Kino kodi: <b>${text}</b>\n🍿 Yaxshi tomosha!`,
+    parse_mode: 'HTML',
+  });
 });
 
 // ======================
-// ADMIN BROADCAST
+// ADMIN: BROADCAST
 // ======================
 bot.onText(/\/broadcast (.+)/, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const text = match[1];
-
-  if (chatId.toString() !== ADMIN_ID) {
-    return bot.sendMessage(chatId, "❌ Siz admin emassiz");
+  if (msg.chat.id.toString() !== ADMIN_ID) {
+    return bot.sendMessage(msg.chat.id, '❌ Siz admin emassiz');
   }
 
-  const usersSnapshot = await db.collection('users').get();
-  const users = usersSnapshot.docs.map(doc => doc.id);
+  const text = match[1];
+  const usersSnap = await db.collection('users').get();
 
-  for (const userId of users) {
+  let sent = 0;
+
+  for (const doc of usersSnap.docs) {
     try {
-      await bot.sendMessage(userId, `📢 Admin xabari:\n\n${text}`);
+      await bot.sendMessage(
+        doc.id,
+        `📢 <b>Admin xabari</b><br><br>${text}`,
+        { parse_mode: 'HTML' }
+      );
+      sent++;
     } catch (e) {
-      console.log(`Xabar yuborilmadi: ${userId}`, e.message);
+      console.log('Xabar yuborilmadi:', doc.id);
     }
   }
 
-  bot.sendMessage(chatId, `✅ Xabar ${users.length} foydalanuvchiga yuborildi`);
+  bot.sendMessage(
+    msg.chat.id,
+    `✅ Xabar <b>${sent}</b> ta foydalanuvchiga yuborildi`,
+    { parse_mode: 'HTML' }
+  );
 });
 
 // ======================
-// ADMIN STATS
+// ADMIN: STATS
 // ======================
 bot.onText(/\/stats/, async (msg) => {
-  const chatId = msg.chat.id;
-
-  if (chatId.toString() !== ADMIN_ID) {
-    return bot.sendMessage(chatId, "❌ Siz admin emassiz");
+  if (msg.chat.id.toString() !== ADMIN_ID) {
+    return bot.sendMessage(msg.chat.id, '❌ Siz admin emassiz');
   }
 
-  const usersSnapshot = await db.collection('users').get();
-  const count = usersSnapshot.size;
+  const usersSnap = await db.collection('users').get();
 
-  bot.sendMessage(chatId, `📊 Botni ${count} foydalanuvchi ishlatmoqda`);
+  bot.sendMessage(
+    msg.chat.id,
+    `📊 <b>Bot statistikasi</b><br><br>
+👥 Foydalanuvchilar soni: <b>${usersSnap.size}</b>`,
+    { parse_mode: 'HTML' }
+  );
 });
