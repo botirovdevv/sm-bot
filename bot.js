@@ -15,7 +15,6 @@ console.log('🤖 Smile Movies Bot ishga tushdi!');
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id.toString();
 
-  // user saqlash
   await db.collection('users').doc(chatId).set(
     {
       chatId,
@@ -26,17 +25,11 @@ bot.onText(/\/start/, async (msg) => {
 
   bot.sendMessage(
     chatId,
-    `🎬 <b>Smile Movies</b> botiga xush kelibsiz!<br><br>
-👤 Yaratuvchi: <b>@mustafo_dv</b><br>
-🍿 Bu botda kino ko‘rish uchun <b>obuna shart emas</b><br><br>
-💡 Kino ko‘rish uchun <b>kodi</b> ni yuboring yoki <b>/help</b> ni bosing`,
-    {
-      parse_mode: 'HTML',
-      reply_markup: {
-        keyboard: [['Kodni yozish 🎞'], ['/help ℹ️']],
-        resize_keyboard: true,
-      },
-    }
+    `🎬 <b>Smile Movies</b> botiga xush kelibsiz!
+
+👤 Yaratuvchi: <b>@mustafo_dv</b>
+🍿 Bu botda kino ko‘rish uchun <b>obuna shart emas</b>`,
+    { parse_mode: 'HTML' }
   );
 });
 
@@ -83,7 +76,6 @@ bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text.trim();
 
-  // command bo‘lsa o‘tkazib yuboramiz
   if (text.startsWith('/')) return;
 
   const doc = await db.collection('movies').doc(text).get();
@@ -99,7 +91,6 @@ bot.on('message', async (msg) => {
 
   const data = doc.data();
 
-  // views +1
   await db.collection('movies').doc(text).update({
     views: admin.firestore.FieldValue.increment(1),
   });
