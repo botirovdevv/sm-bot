@@ -135,10 +135,9 @@ bot.on('message', async (msg) => {
     });
 
     await bot.sendVideo(chatId, data.fileId, {
-      caption: `🎬 <b>Kino kodi:</b> ${text}
-🍿 Yaxshi tomosha!`,
-      parse_mode: 'HTML',
+      caption: `${data.caption}`,
     });
+
   } catch (err) {
     console.error('Message handler xatolik:', err);
     bot.sendMessage(chatId, '❌ Xatolik yuz berdi, qayta urinib ko‘ring.');
