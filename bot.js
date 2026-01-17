@@ -64,7 +64,6 @@ bot.on('channel_post', async (post) => {
     views: 0,
   });
 
-  console.log(`🎬 Kino Firebase ga saqlandi: ${code}`);
 });
 
 // ======================
