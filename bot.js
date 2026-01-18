@@ -29,29 +29,28 @@ function extractMovieCode(caption) {
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id.toString();
 
-  try {
-    await db.collection('users').doc(chatId).set(
-      {
-        chatId,
-        startedAt: new Date(),
-      },
-      { merge: true }
-    );
+  await db.collection('users').doc(chatId).set(
+    { chatId, startedAt: new Date() },
+    { merge: true }
+  );
 
-    await bot.sendMessage(
-      chatId,
-      `🎬 <b>Smile Movies</b> botiga xush kelibsiz!
+  await bot.sendMessage(
+    chatId,
+    `🎬 <b>Smile Movies</b> botiga xush kelibsiz!
 
 👤 Yaratuvchi: <b>@mustafo_dv</b>
-🍿 Bu botda kino ko‘rish uchun <b>obuna shart emas</b>
+🍿 Obuna shart emas
 
-🔢 <b>Kino kodini yuboring</b> va tomosha qiling`,
-      { parse_mode: 'HTML' }
-    );
-  } catch (err) {
-    console.error('Start xatolik:', err);
-  }
+🔢 Kino kodini yuboring`,
+    {
+      parse_mode: 'HTML',
+      reply_markup: {
+        remove_keyboard: true   // 🔥 MUHIM QATOR
+      }
+    }
+  );
 });
+
 
 // ======================
 // HELP COMMAND
