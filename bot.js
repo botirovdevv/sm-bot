@@ -10,12 +10,15 @@ const ADMIN_ID = process.env.ADMIN_ID;
 console.log('🤖 Smile Movies Bot ishga tushdi!');
 
 // ======================
-// KINO KODINI AJRATIB OLISH
+// KINO KODINI CAPTIONDAN AJRATISH
 // ======================
 function extractMovieCode(caption) {
   if (!caption) return null;
 
-  // Kod: 1234 | 🔢 Kod - 1234 | kod 1234
+  // Misollar:
+  // Kod: 6
+  // kod 6
+  // 🔢 Kod - 6
   const match = caption.match(/kod\s*[:\-]?\s*(\d+)/i);
   return match ? match[1] : null;
 }
@@ -27,10 +30,6 @@ bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id.toString();
 
   try {
-    await bot.sendMessage(chatId, ' ', {
-      reply_markup: { remove_keyboard: true }
-    });
-
     await db.collection('users').doc(chatId).set(
       {
         chatId,
@@ -46,36 +45,34 @@ bot.onText(/\/start/, async (msg) => {
 👤 Yaratuvchi: <b>@mustafo_dv</b>
 🍿 Bu botda kino ko‘rish uchun <b>obuna shart emas</b>
 
-🔢 Kino kodini yuboring va tomosha qiling`,
+🔢 <b>Kino kodini yuboring</b> va tomosha qiling`,
       { parse_mode: 'HTML' }
     );
   } catch (err) {
-    console.error('Start command xatolik:', err);
+    console.error('Start xatolik:', err);
   }
 });
-
 
 // ======================
 // HELP COMMAND
 // ======================
 bot.onText(/\/help/, async (msg) => {
-  const chatId = msg.chat.id;
-
   try {
     await bot.sendMessage(
-      chatId,
+      msg.chat.id,
       `ℹ️ <b>Qanday ishlaydi?</b>
 
-1️⃣ Siz kino kodini botga yuborasiz
-2️⃣ Kod faqat raqamlardan iborat bo'ladi
-3️⃣ Bot kinoni qaytaradi 🎬
+1️⃣ Kanalga kino tashlanadi
+2️⃣ Caption ichida <b>Kod:</b> bo‘ladi
+3️⃣ Siz kodni botga yuborasiz
+4️⃣ Bot kinoni qaytaradi 🎬
 
 📝 Misol:
-<code>🔢 Kod: 4587</code>`,
+<code>Kod: 6</code>`,
       { parse_mode: 'HTML' }
     );
   } catch (err) {
-    console.error('Help command xatolik:', err);
+    console.error('Help xatolik:', err);
   }
 });
 
@@ -88,23 +85,21 @@ bot.on('channel_post', async (post) => {
     if (!post.video || !post.caption) return;
 
     const code = extractMovieCode(post.caption);
-
     if (!code) {
-      console.log('❌ Caption ichida kino kodi topilmadi');
+      console.log('❌ Caption ichida kod topilmadi');
       return;
     }
 
-    const fileId = post.video.file_id;
-
     await db.collection('movies').doc(code).set({
-      fileId,
-      caption: post.caption,
+      fileId: post.video.file_id,
+      caption: post.caption || '',
       createdAt: new Date(),
       views: 0,
     });
 
+    console.log(`🎬 Kino saqlandi | Kod: ${code}`);
   } catch (err) {
-    console.error('Channel post handler xatolik:', err);
+    console.error('Channel post xatolik:', err);
   }
 });
 
@@ -117,6 +112,7 @@ bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text.trim();
 
+  // commandlarni o'tkazib yuboramiz
   if (text.startsWith('/')) return;
 
   try {
@@ -126,63 +122,31 @@ bot.on('message', async (msg) => {
       return bot.sendMessage(
         chatId,
         `❌ <b>Bunday kino kodi topilmadi</b>
-🔁 Iltimos, kodni tekshirib qayta yuboring`,
+🔁 Kodni tekshirib qayta yuboring`,
         { parse_mode: 'HTML' }
       );
     }
 
     const data = doc.data();
 
+    // views +1
     await db.collection('movies').doc(text).update({
       views: admin.firestore.FieldValue.increment(1),
     });
 
+    // caption bo‘sh bo‘lsa — default text
+    const captionText =
+      data.caption && data.caption.trim().length > 0
+        ? data.caption
+        : `🎬 Kino kodi: ${text}\n🍿 Yaxshi tomosha!`;
+
     await bot.sendVideo(chatId, data.fileId, {
-      caption: `${data.caption}`,
+      caption: captionText,
     });
 
   } catch (err) {
-    console.error('Message handler xatolik:', err);
+    console.error('User message xatolik:', err);
     bot.sendMessage(chatId, '❌ Xatolik yuz berdi, qayta urinib ko‘ring.');
-  }
-});
-
-// ======================
-// ADMIN: BROADCAST
-// ======================
-bot.onText(/\/broadcast (.+)/, async (msg, match) => {
-  if (msg.chat.id.toString() !== ADMIN_ID) {
-    return bot.sendMessage(msg.chat.id, '❌ Siz admin emassiz');
-  }
-
-  const text = match[1];
-
-  try {
-    const usersSnap = await db.collection('users').get();
-    let sent = 0;
-
-    for (const doc of usersSnap.docs) {
-      try {
-        await bot.sendMessage(
-          doc.id,
-          `📢 <b>Admin xabari</b>
-
-${text}`,
-          { parse_mode: 'HTML' }
-        );
-        sent++;
-      } catch (e) {
-        console.log('Xabar yuborilmadi:', doc.id);
-      }
-    }
-
-    await bot.sendMessage(
-      msg.chat.id,
-      `✅ Xabar <b>${sent}</b> ta foydalanuvchiga yuborildi`,
-      { parse_mode: 'HTML' }
-    );
-  } catch (err) {
-    console.error('Broadcast xatolik:', err);
   }
 });
 
@@ -196,14 +160,15 @@ bot.onText(/\/stats/, async (msg) => {
 
   try {
     const usersSnap = await db.collection('users').get();
+
     await bot.sendMessage(
       msg.chat.id,
       `📊 <b>Bot statistikasi</b>
 
-👥 Foydalanuvchilar soni: <b>${usersSnap.size}</b>`,
+👥 Foydalanuvchilar: <b>${usersSnap.size}</b>`,
       { parse_mode: 'HTML' }
     );
   } catch (err) {
-    console.error('Stats command xatolik:', err);
+    console.error('Stats xatolik:', err);
   }
 });
