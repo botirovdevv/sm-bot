@@ -27,6 +27,10 @@ bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id.toString();
 
   try {
+    await bot.sendMessage(chatId, ' ', {
+      reply_markup: { remove_keyboard: true }
+    });
+
     await db.collection('users').doc(chatId).set(
       {
         chatId,
@@ -50,6 +54,7 @@ bot.onText(/\/start/, async (msg) => {
   }
 });
 
+
 // ======================
 // HELP COMMAND
 // ======================
@@ -61,10 +66,9 @@ bot.onText(/\/help/, async (msg) => {
       chatId,
       `ℹ️ <b>Qanday ishlaydi?</b>
 
-1️⃣ Admin kanalga kino yuboradi
-2️⃣ Caption ichida <b>Kod:</b> bo‘ladi
-3️⃣ Siz kodni yuborasiz
-4️⃣ Bot kinoni qaytaradi 🎬
+1️⃣ Siz kino kodini botga yuborasiz
+2️⃣ Kod faqat raqamlardan iborat bo'ladi
+3️⃣ Bot kinoni qaytaradi 🎬
 
 📝 Misol:
 <code>🔢 Kod: 4587</code>`,
@@ -99,7 +103,6 @@ bot.on('channel_post', async (post) => {
       views: 0,
     });
 
-    console.log(`🎬 Kino saqlandi. Kod: ${code}`);
   } catch (err) {
     console.error('Channel post handler xatolik:', err);
   }
