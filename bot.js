@@ -28,28 +28,56 @@ function extractMovieCode(caption) {
 // ======================
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id.toString();
+  const username = msg.from.username ? '@' + msg.from.username : 'Username yo‘q';
+  const firstName = msg.from.first_name || '';
+  const lastName = msg.from.last_name || '';
 
-  await db.collection('users').doc(chatId).set(
-    { chatId, startedAt: new Date() },
-    { merge: true }
-  );
-
-  await bot.sendMessage(
+  const userData = {
     chatId,
-    `🎬 <b>Smile Movies</b> botiga xush kelibsiz!
+    username,
+    firstName,
+    lastName,
+    startedAt: new Date(),
+  };
+
+  try {
+    await db.collection('users').doc(chatId).set(userData, { merge: true });
+
+    // Foydalanuvchiga xabar
+    await bot.sendMessage(
+      chatId,
+      `🎬 <b>Smile Movies</b> botiga xush kelibsiz!
 
 👤 Yaratuvchi: <b>@mustafo_dv</b>
 🍿 Obuna shart emas
 
 🔢 Kino kodini yuboring`,
-    {
-      parse_mode: 'HTML',
-      reply_markup: {
-        remove_keyboard: true   // 🔥 MUHIM QATOR
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          remove_keyboard: true,
+        },
       }
-    }
-  );
+    );
+
+    // ======================
+    // ADMINGA YANGI FOYDALANUVCHI XABARI
+    // ======================
+    await bot.sendMessage(
+      ADMIN_ID,
+      `🆕 <b>Yangi foydalanuvchi qo‘shildi!</b>\n
+👤 Ismi: ${firstName} ${lastName}
+🔗 Username: ${username}
+🆔 Chat ID: ${chatId}
+📅 Qo‘shilgan sana: ${userData.startedAt.toLocaleString()}`,
+      { parse_mode: 'HTML' }
+    );
+
+  } catch (err) {
+    console.error('Start xatolik:', err);
+  }
 });
+
 
 
 // ======================
