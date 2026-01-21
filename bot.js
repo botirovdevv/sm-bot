@@ -41,9 +41,23 @@ bot.onText(/\/start/, async (msg) => {
   };
 
   try {
-    await db.collection('users').doc(chatId).set(userData, { merge: true });
+    const userDoc = await db.collection('users').doc(chatId).get();
 
-    // Foydalanuvchiga xabar
+    if (!userDoc.exists) {
+      await db.collection('users').doc(chatId).set(userData);
+
+      await bot.sendMessage(
+        ADMIN_ID,
+        `🆕 <b>Yangi foydalanuvchi qo‘shildi!</b>\n
+👤 Ismi: ${firstName} ${lastName}
+🔗 Username: ${username}
+🆔 Chat ID: ${chatId}
+📅 Qo‘shilgan sana: ${userData.startedAt.toLocaleString()}`,
+        { parse_mode: 'HTML' }
+      );
+    }
+
+    // Foydalanuvchiga xabar (har doim jo‘natiladi)
     await bot.sendMessage(
       chatId,
       `🎬 <b>Smile Movies</b> botiga xush kelibsiz!
@@ -58,19 +72,6 @@ bot.onText(/\/start/, async (msg) => {
           remove_keyboard: true,
         },
       }
-    );
-
-    // ======================
-    // ADMINGA YANGI FOYDALANUVCHI XABARI
-    // ======================
-    await bot.sendMessage(
-      ADMIN_ID,
-      `🆕 <b>Yangi foydalanuvchi qo‘shildi!</b>\n
-👤 Ismi: ${firstName} ${lastName}
-🔗 Username: ${username}
-🆔 Chat ID: ${chatId}
-📅 Qo‘shilgan sana: ${userData.startedAt.toLocaleString()}`,
-      { parse_mode: 'HTML' }
     );
 
   } catch (err) {
