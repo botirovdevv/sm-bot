@@ -7,8 +7,6 @@ const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const CHANNEL_ID = process.env.CHANNEL_ID;
 const ADMIN_ID = process.env.ADMIN_ID;
 
-console.log('🤖 Smile Movies Bot ishga tushdi!');
-
 // ======================
 // KINO KODINI CAPTIONDAN AJRATISH
 // ======================
@@ -60,7 +58,7 @@ bot.onText(/\/start/, async (msg) => {
     // Foydalanuvchiga xabar (har doim jo‘natiladi)
     await bot.sendMessage(
       chatId,
-      `🎬 <b>Smile Movies</b> botiga xush kelibsiz!
+      `🎬 <b>Kino Code</b> botiga xush kelibsiz!
 
 👤 Yaratuvchi: <b>@mustafo_dv</b>
 🍿 Obuna shart emas
