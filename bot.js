@@ -7,23 +7,13 @@ const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const CHANNEL_ID = process.env.CHANNEL_ID;
 const ADMIN_ID = process.env.ADMIN_ID;
 
-// ======================
-// KINO KODINI CAPTIONDAN AJRATISH
-// ======================
 function extractMovieCode(caption) {
   if (!caption) return null;
 
-  // Misollar:
-  // Kod: 6
-  // kod 6
-  // 🔢 Kod - 6
   const match = caption.match(/kod\s*[:\-]?\s*(\d+)/i);
   return match ? match[1] : null;
 }
 
-// ======================
-// START COMMAND
-// ======================
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id.toString();
   const username = msg.from.username ? '@' + msg.from.username : 'Username yo‘q';
@@ -55,7 +45,6 @@ bot.onText(/\/start/, async (msg) => {
       );
     }
 
-    // Foydalanuvchiga xabar (har doim jo‘natiladi)
     await bot.sendMessage(
       chatId,
       `🎬 <b>Kino Code</b> botiga xush kelibsiz!
@@ -77,11 +66,6 @@ bot.onText(/\/start/, async (msg) => {
   }
 });
 
-
-
-// ======================
-// HELP COMMAND
-// ======================
 bot.onText(/\/help/, async (msg) => {
   try {
     await bot.sendMessage(
@@ -102,9 +86,6 @@ bot.onText(/\/help/, async (msg) => {
   }
 });
 
-// ======================
-// CHANNEL POST HANDLER
-// ======================
 bot.on('channel_post', async (post) => {
   try {
     if (post.chat.id.toString() !== CHANNEL_ID) return;
@@ -129,16 +110,12 @@ bot.on('channel_post', async (post) => {
   }
 });
 
-// ======================
-// USER MESSAGE HANDLER
-// ======================
 bot.on('message', async (msg) => {
   if (!msg.text) return;
 
   const chatId = msg.chat.id;
   const text = msg.text.trim();
 
-  // commandlarni o'tkazib yuboramiz
   if (text.startsWith('/')) return;
 
   try {
@@ -155,12 +132,12 @@ bot.on('message', async (msg) => {
 
     const data = doc.data();
 
-    // views +1
+    
     await db.collection('movies').doc(text).update({
       views: admin.firestore.FieldValue.increment(1),
     });
 
-    // caption bo‘sh bo‘lsa — default text
+    
     const captionText =
       data.caption && data.caption.trim().length > 0
         ? data.caption
@@ -176,9 +153,6 @@ bot.on('message', async (msg) => {
   }
 });
 
-// ======================
-// ADMIN: STATS
-// ======================
 bot.onText(/\/stats/, async (msg) => {
   if (msg.chat.id.toString() !== ADMIN_ID) {
     return bot.sendMessage(msg.chat.id, '❌ Siz admin emassiz');
