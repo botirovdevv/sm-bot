@@ -7,168 +7,202 @@ const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const CHANNEL_ID = process.env.CHANNEL_ID;
 const ADMIN_ID = process.env.ADMIN_ID;
 
+/* ======================================
+   HELPER FUNCTIONS
+======================================*/
+
+// Oddiy kino kodi
 function extractMovieCode(caption) {
   if (!caption) return null;
-
   const match = caption.match(/kod\s*[:\-]?\s*(\d+)/i);
   return match ? match[1] : null;
 }
 
-bot.onText(/\/start/, async (msg) => {
-  const chatId = msg.chat.id.toString();
-  const username = msg.from.username ? '@' + msg.from.username : 'Username yo‘q';
-  const firstName = msg.from.first_name || '';
-  const lastName = msg.from.last_name || '';
+// Serial + qism aniqlash (kuchli versiya)
+function extractSerialInfo(caption) {
+  if (!caption) return null;
 
-  const userData = {
-    chatId,
-    username,
-    firstName,
-    lastName,
-    startedAt: new Date(),
+  const serialMatch = caption.match(/serial\s*[:\-]?\s*(\d+)/i);
+
+  const partMatch =
+    caption.match(/qism\s*[:\-]?\s*(\d+)/i) ||   // Qism: 4
+    caption.match(/(\d+)\s*[-]?\s*qism/i);       // 4-qism yoki 4 qism
+
+  if (!serialMatch || !partMatch) return null;
+
+  return {
+    serialCode: serialMatch[1],
+    partNumber: partMatch[1],
   };
+}
 
-  try {
-    const userDoc = await db.collection('users').doc(chatId).get();
+/* ======================================
+   START
+======================================*/
 
-    if (!userDoc.exists) {
-      await db.collection('users').doc(chatId).set(userData);
+bot.onText(/\/start/, async (msg) => {
+  await bot.sendMessage(
+    msg.chat.id,
+    `🎬 <b>Kino & Serial Bot</b>
 
-      await bot.sendMessage(
-        ADMIN_ID,
-        `🆕 <b>Yangi foydalanuvchi qo‘shildi!</b>\n
-👤 Ismi: ${firstName} ${lastName}
-🔗 Username: ${username}
-🆔 Chat ID: ${chatId}
-📅 Qo‘shilgan sana: ${userData.startedAt.toLocaleString()}`,
-        { parse_mode: 'HTML' }
-      );
-    }
-
-    await bot.sendMessage(
-      chatId,
-      `🎬 <b>Kino Code</b> botiga xush kelibsiz!
-
-👤 Yaratuvchi: <b>@mustafo_dv</b>
-🍿 Obuna shart emas
-
-🔢 Kino kodini yuboring`,
-      {
-        parse_mode: 'HTML',
-        reply_markup: {
-          remove_keyboard: true,
-        },
-      }
-    );
-
-  } catch (err) {
-    console.error('Start xatolik:', err);
-  }
+🔢 Kino yoki serial kodini yuboring`,
+    { parse_mode: "HTML" }
+  );
 });
 
-bot.onText(/\/help/, async (msg) => {
-  try {
-    await bot.sendMessage(
-      msg.chat.id,
-      `ℹ️ <b>Qanday ishlaydi?</b>
-
-1️⃣ Kanalga kino tashlanadi
-2️⃣ Caption ichida <b>Kod:</b> bo‘ladi
-3️⃣ Siz kodni botga yuborasiz
-4️⃣ Bot kinoni qaytaradi 🎬
-
-📝 Misol:
-<code>Kod: 6</code>`,
-      { parse_mode: 'HTML' }
-    );
-  } catch (err) {
-    console.error('Help xatolik:', err);
-  }
-});
+/* ======================================
+   CHANNEL POST (Database ga saqlash)
+======================================*/
 
 bot.on('channel_post', async (post) => {
   try {
     if (post.chat.id.toString() !== CHANNEL_ID) return;
-    if (!post.video || !post.caption) return;
 
-    const code = extractMovieCode(post.caption);
-    if (!code) {
-      console.log('❌ Caption ichida kod topilmadi');
-      return;
+    /* ===== SERIAL QISM ===== */
+    if (post.video && post.caption) {
+      const serialInfo = extractSerialInfo(post.caption);
+
+      if (serialInfo) {
+        await db.collection('serial_parts')
+          .doc(`${serialInfo.serialCode}_${serialInfo.partNumber}`)
+          .set({
+            fileId: post.video.file_id,
+            createdAt: new Date(),
+          });
+
+        console.log(`📺 Serial saqlandi: ${serialInfo.serialCode} | Qism: ${serialInfo.partNumber}`);
+        return;
+      }
+
+      /* ===== ODDIY KINO ===== */
+      const code = extractMovieCode(post.caption);
+      if (code) {
+        await db.collection('movies').doc(code).set({
+          fileId: post.video.file_id,
+          caption: post.caption,
+          createdAt: new Date(),
+          views: 0,
+        });
+
+        console.log(`🎬 Kino saqlandi: ${code}`);
+      }
     }
 
-    await db.collection('movies').doc(code).set({
-      fileId: post.video.file_id,
-      caption: post.caption || '',
-      createdAt: new Date(),
-      views: 0,
-    });
-
-    console.log(`🎬 Kino saqlandi | Kod: ${code}`);
   } catch (err) {
-    console.error('Channel post xatolik:', err);
+    console.error("Channel post xatolik:", err);
   }
 });
 
+/* ======================================
+   USER MESSAGE (Kod yuboradi)
+======================================*/
+
 bot.on('message', async (msg) => {
   if (!msg.text) return;
+  if (msg.text.startsWith('/')) return;
 
   const chatId = msg.chat.id;
   const text = msg.text.trim();
 
-  if (text.startsWith('/')) return;
-
   try {
-    const doc = await db.collection('movies').doc(text).get();
+    /* ===== SERIAL TEKSHIRISH ===== */
 
-    if (!doc.exists) {
+    const serialDoc = await db.collection('serials').doc(text).get();
+
+    if (serialDoc.exists) {
+      const serialData = serialDoc.data();
+      const totalParts = serialData.totalParts;
+
+      const keyboard = [];
+      let row = [];
+
+      for (let i = 1; i <= totalParts; i++) {
+        row.push({
+          text: `${i}-qism`,
+          callback_data: `serial_${text}_${i}`,
+        });
+
+        if (row.length === 2) {
+          keyboard.push(row);
+          row = [];
+        }
+      }
+
+      if (row.length > 0) keyboard.push(row);
+
+      return bot.sendPhoto(chatId, serialData.posterFileId, {
+        caption: `🎬 <b>${serialData.title}</b>
+
+👇 Qismni tanlang`,
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: keyboard,
+        },
+      });
+    }
+
+    /* ===== ODDIY KINO ===== */
+
+    const movieDoc = await db.collection('movies').doc(text).get();
+
+    if (!movieDoc.exists) {
       return bot.sendMessage(
         chatId,
-        `❌ <b>Bunday kino kodi topilmadi</b>
-🔁 Kodni tekshirib qayta yuboring`,
-        { parse_mode: 'HTML' }
+        `❌ <b>Kod topilmadi</b>
+🔁 Qayta tekshiring`,
+        { parse_mode: "HTML" }
       );
     }
 
-    const data = doc.data();
+    const movieData = movieDoc.data();
 
-    
     await db.collection('movies').doc(text).update({
       views: admin.firestore.FieldValue.increment(1),
     });
 
-    
-    const captionText =
-      data.caption && data.caption.trim().length > 0
-        ? data.caption
-        : `🎬 Kino kodi: ${text}\n🍿 Yaxshi tomosha!`;
-
-    await bot.sendVideo(chatId, data.fileId, {
-      caption: captionText,
+    await bot.sendVideo(chatId, movieData.fileId, {
+      caption: movieData.caption || `🎬 Kino kodi: ${text}`,
     });
 
   } catch (err) {
-    console.error('User message xatolik:', err);
-    bot.sendMessage(chatId, '❌ Xatolik yuz berdi, qayta urinib ko‘ring.');
+    console.error("User message xatolik:", err);
+    bot.sendMessage(chatId, "❌ Xatolik yuz berdi");
   }
 });
 
-bot.onText(/\/stats/, async (msg) => {
-  if (msg.chat.id.toString() !== ADMIN_ID) {
-    return bot.sendMessage(msg.chat.id, '❌ Siz admin emassiz');
-  }
+/* ======================================
+   SERIAL QISM BOSILGANDA
+======================================*/
 
+bot.on('callback_query', async (query) => {
   try {
-    const usersSnap = await db.collection('users').get();
+    const data = query.data;
 
-    await bot.sendMessage(
-      msg.chat.id,
-      `📊 <b>Bot statistikasi</b>
+    if (!data.startsWith('serial_')) return;
 
-👥 Foydalanuvchilar: <b>${usersSnap.size}</b>`,
-      { parse_mode: 'HTML' }
-    );
+    const [_, serialCode, partNumber] = data.split('_');
+
+    const partDoc = await db
+      .collection('serial_parts')
+      .doc(`${serialCode}_${partNumber}`)
+      .get();
+
+    if (!partDoc.exists) {
+      return bot.answerCallbackQuery(query.id, {
+        text: "Qism topilmadi ❌",
+        show_alert: true,
+      });
+    }
+
+    const partData = partDoc.data();
+
+    await bot.sendVideo(query.message.chat.id, partData.fileId, {
+      caption: `🎬 ${partNumber}-qism`,
+    });
+
+    bot.answerCallbackQuery(query.id);
+
   } catch (err) {
-    console.error('Stats xatolik:', err);
+    console.error("Callback xatolik:", err);
   }
 });
