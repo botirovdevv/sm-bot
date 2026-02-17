@@ -50,7 +50,7 @@ function getSerialKeyboard(serialCode, totalParts, page = 0) {
   let row = [];
   for (let i = start; i < end; i++) {
     row.push({
-      text: ` ${i + 1}-qism`,
+      text: `${i + 1}-qism`,                  // endi icon yo‘q
       callback_data: `serial_${serialCode}_${i + 1}_page_${page}`,
     });
     if (row.length === 2) { keyboard.push(row); row = []; }
@@ -64,6 +64,7 @@ function getSerialKeyboard(serialCode, totalParts, page = 0) {
 
   return keyboard;
 }
+
 
 /* ======================================
    START
