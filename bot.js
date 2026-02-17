@@ -37,15 +37,6 @@ function extractSerialInfo(caption) {
 }
 
 /* ======================================
-   ICONS & ARROW HELPER
-======================================*/
-const icons = ["➡️", "🔥", "💡", "⭐", "📌", "⚡", "🎬", "🎉"];
-
-function getIcon(index) {
-  return icons[index % icons.length];
-}
-
-/* ======================================
    SERIAL PAGINATION
 ======================================*/
 const PAGE_SIZE = 5; // bir sahifada qancha qism ko‘rsatiladi
@@ -58,7 +49,7 @@ function getSerialKeyboard(serialCode, totalParts, page = 0) {
   let row = [];
   for (let i = start; i < end; i++) {
     row.push({
-      text: `${getIcon(i)} ${i + 1}-qism`,
+      text: `${i + 1}-qism`,
       callback_data: `serial_${serialCode}_${i + 1}_page_${page}`,
     });
 
@@ -86,7 +77,7 @@ bot.onText(/\/start/, async (msg) => {
 
   await bot.sendMessage(
     chatId,
-    `🎬 <b>Salom, ${firstName}!</b>\n\n` +
+    `🎬 <b>Assalomu aleykum, ${firstName}!</b>\n\n` +
     `Bu botdan foydalanish uchun hech qanday kanalga obuna bo‘lish sharti yo‘q ✅\n\n` +
     `🔢 Kino yoki serial kodini yuboring, va siz osonlik bilan film yoki serialni olasiz!`,
     { parse_mode: "HTML" }
