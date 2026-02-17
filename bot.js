@@ -18,15 +18,15 @@ function extractMovieCode(caption) {
   return match ? match[1] : null;
 }
 
-// Serial + qism aniqlash (kuchli versiya)
+// Serial + qism aniqlash
 function extractSerialInfo(caption) {
   if (!caption) return null;
 
   const serialMatch = caption.match(/serial\s*[:\-]?\s*(\d+)/i);
 
   const partMatch =
-    caption.match(/qism\s*[:\-]?\s*(\d+)/i) ||   // Qism: 4
-    caption.match(/(\d+)\s*[-]?\s*qism/i);       // 4-qism yoki 4 qism
+    caption.match(/qism\s*[:\-]?\s*(\d+)/i) ||
+    caption.match(/(\d+)\s*[-]?\s*qism/i);
 
   if (!serialMatch || !partMatch) return null;
 
@@ -37,9 +37,17 @@ function extractSerialInfo(caption) {
 }
 
 /* ======================================
+   ICONS & ARROW HELPER
+=====================================*/
+const icons = ["➡️", "🔥", "💡", "⭐", "📌", "⚡", "🎬", "🎉"];
+function getIcon(index) {
+  return icons[index % icons.length];
+}
+
+/* ======================================
    SERIAL PAGINATION
-======================================*/
-const PAGE_SIZE = 5; // bir sahifada qancha qism ko‘rsatiladi
+=====================================*/
+const PAGE_SIZE = 5;
 
 function getSerialKeyboard(serialCode, totalParts, page = 0) {
   const keyboard = [];
@@ -49,14 +57,10 @@ function getSerialKeyboard(serialCode, totalParts, page = 0) {
   let row = [];
   for (let i = start; i < end; i++) {
     row.push({
-      text: `${i + 1}-qism`,
+      text: `${getIcon(i)} ${i + 1}-qism`,
       callback_data: `serial_${serialCode}_${i + 1}_page_${page}`,
     });
-
-    if (row.length === 2) {
-      keyboard.push(row);
-      row = [];
-    }
+    if (row.length === 2) { keyboard.push(row); row = []; }
   }
   if (row.length > 0) keyboard.push(row);
 
@@ -70,10 +74,19 @@ function getSerialKeyboard(serialCode, totalParts, page = 0) {
 
 /* ======================================
    START
-======================================*/
+=====================================*/
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
   const firstName = msg.from.first_name || "do'st";
+
+  // Foydalanuvchini Firebase ga saqlash
+  try {
+    await db.collection('users').doc(chatId.toString()).set({
+      chatId,
+      firstName,
+      createdAt: new Date(),
+    }, { merge: true });
+  } catch (err) { console.error("User saqlash xatolik:", err); }
 
   await bot.sendMessage(
     chatId,
@@ -85,22 +98,53 @@ bot.onText(/\/start/, async (msg) => {
 });
 
 /* ======================================
+   ADMIN BROADCAST FUNCTION
+=====================================*/
+bot.onText(/\/message (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  if (chatId.toString() !== ADMIN_ID) return;
+
+  const textToSend = match[1];
+
+  try {
+    const usersSnapshot = await db.collection('users').get();
+    if (usersSnapshot.empty) return bot.sendMessage(chatId, "❌ Foydalanuvchilar topilmadi.");
+
+    let success = 0;
+    let failed = 0;
+
+    // Telegram spamdan saqlanish uchun 200ms delay qo‘shish tavsiya etiladi
+    for (const doc of usersSnapshot.docs) {
+      const user = doc.data();
+      try {
+        await bot.sendMessage(user.chatId, `📢 Admindan xabar:\n\n${textToSend}`);
+        success++;
+      } catch {
+        failed++;
+      }
+    }
+
+    bot.sendMessage(chatId, `✅ Xabar jo‘natildi: ${success} ta foydalanuvchiga\n❌ Muvaffaqiyatsiz: ${failed}`);
+  } catch (err) {
+    console.error("Broadcast xatolik:", err);
+    bot.sendMessage(chatId, "❌ Xatolik yuz berdi");
+  }
+});
+
+/* ======================================
    CHANNEL POST (Firebase ga saqlash)
-======================================*/
+=====================================*/
 bot.on('channel_post', async (post) => {
   try {
     if (post.chat.id.toString() !== CHANNEL_ID) return;
 
     if (post.video && post.caption) {
       const serialInfo = extractSerialInfo(post.caption);
-
       if (serialInfo) {
-        await db.collection('serial_parts')
-          .doc(`${serialInfo.serialCode}_${serialInfo.partNumber}`)
-          .set({
-            fileId: post.video.file_id,
-            createdAt: new Date(),
-          });
+        await db.collection('serial_parts').doc(`${serialInfo.serialCode}_${serialInfo.partNumber}`).set({
+          fileId: post.video.file_id,
+          createdAt: new Date(),
+        });
         console.log(`📺 Serial saqlandi: ${serialInfo.serialCode} | Qism: ${serialInfo.partNumber}`);
         return;
       }
@@ -116,15 +160,12 @@ bot.on('channel_post', async (post) => {
         console.log(`🎬 Kino saqlandi: ${code}`);
       }
     }
-
-  } catch (err) {
-    console.error("Channel post xatolik:", err);
-  }
+  } catch (err) { console.error("Channel post xatolik:", err); }
 });
 
 /* ======================================
    USER MESSAGE
-======================================*/
+=====================================*/
 bot.on('message', async (msg) => {
   if (!msg.text) return;
   if (msg.text.startsWith('/')) return;
@@ -133,13 +174,11 @@ bot.on('message', async (msg) => {
   const text = msg.text.trim();
 
   try {
-    // Serial tekshirish
     const serialDoc = await db.collection('serials').doc(text).get();
     if (serialDoc.exists) {
       const serialData = serialDoc.data();
       const totalParts = serialData.totalParts;
-      const keyboard = getSerialKeyboard(text, totalParts, 0); // bosh sahifa
-
+      const keyboard = getSerialKeyboard(text, totalParts, 0);
       return bot.sendPhoto(chatId, serialData.posterFileId, {
         caption: `🎬 <b>${serialData.title}</b>\n\n👇 Qismni tanlang`,
         parse_mode: "HTML",
@@ -147,7 +186,6 @@ bot.on('message', async (msg) => {
       });
     }
 
-    // Kino tekshirish
     const movieDoc = await db.collection('movies').doc(text).get();
     if (!movieDoc.exists) {
       return bot.sendMessage(chatId, `❌ <b>Kod topilmadi</b>\n🔁 Qayta tekshiring`, { parse_mode: "HTML" });
@@ -162,7 +200,6 @@ bot.on('message', async (msg) => {
     captionParts.forEach((part, idx) => {
       bot.sendVideo(chatId, movieData.fileId, { caption: `${getIcon(idx)} ${part}`, parse_mode: "HTML" });
     });
-
   } catch (err) {
     console.error("User message xatolik:", err);
     bot.sendMessage(chatId, "❌ Xatolik yuz berdi");
@@ -171,15 +208,13 @@ bot.on('message', async (msg) => {
 
 /* ======================================
    CALLBACK QUERY (Serial qism)
-======================================*/
+=====================================*/
 bot.on('callback_query', async (query) => {
   try {
     const data = query.data;
     if (!data.startsWith('serial_')) return;
 
     const parts = data.split('_');
-
-    // Pagination tugmalari
     if (parts[2] === 'nav') {
       const serialCode = parts[1];
       const page = parseInt(parts[3]);
@@ -195,7 +230,6 @@ bot.on('callback_query', async (query) => {
       );
     }
 
-    // Qismni jo‘natish
     const serialCode = parts[1];
     const partNumber = parts[2];
     const partDoc = await db.collection('serial_parts').doc(`${serialCode}_${partNumber}`).get();
@@ -204,7 +238,5 @@ bot.on('callback_query', async (query) => {
     await bot.sendVideo(query.message.chat.id, partDoc.data().fileId, { caption: `${getIcon(parseInt(partNumber) - 1)} 🎬 ${partNumber}-qism` });
     bot.answerCallbackQuery(query.id);
 
-  } catch (err) {
-    console.error("Callback xatolik:", err);
-  }
+  } catch (err) { console.error("Callback xatolik:", err); }
 });
