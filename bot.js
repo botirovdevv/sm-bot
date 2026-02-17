@@ -37,28 +37,69 @@ function extractSerialInfo(caption) {
 }
 
 /* ======================================
+   ICONS & ARROW HELPER
+======================================*/
+const icons = ["➡️", "🔥", "💡", "⭐", "📌", "⚡", "🎬", "🎉"];
+
+function getIcon(index) {
+  return icons[index % icons.length];
+}
+
+/* ======================================
+   SERIAL PAGINATION
+======================================*/
+const PAGE_SIZE = 5; // bir sahifada qancha qism ko‘rsatiladi
+
+function getSerialKeyboard(serialCode, totalParts, page = 0) {
+  const keyboard = [];
+  const start = page * PAGE_SIZE;
+  const end = Math.min(start + PAGE_SIZE, totalParts);
+
+  let row = [];
+  for (let i = start; i < end; i++) {
+    row.push({
+      text: `${getIcon(i)} ${i + 1}-qism`,
+      callback_data: `serial_${serialCode}_${i + 1}_page_${page}`,
+    });
+
+    if (row.length === 2) {
+      keyboard.push(row);
+      row = [];
+    }
+  }
+  if (row.length > 0) keyboard.push(row);
+
+  const navRow = [];
+  if (page > 0) navRow.push({ text: "⬅️ Orqaga", callback_data: `serial_${serialCode}_nav_${page - 1}` });
+  if (end < totalParts) navRow.push({ text: "➡️ Keyingi", callback_data: `serial_${serialCode}_nav_${page + 1}` });
+  if (navRow.length) keyboard.push(navRow);
+
+  return keyboard;
+}
+
+/* ======================================
    START
 ======================================*/
-
 bot.onText(/\/start/, async (msg) => {
-  await bot.sendMessage(
-    msg.chat.id,
-    `🎬 <b>Kino & Serial Bot</b>
+  const chatId = msg.chat.id;
+  const firstName = msg.from.first_name || "do'st";
 
-🔢 Kino yoki serial kodini yuboring`,
+  await bot.sendMessage(
+    chatId,
+    `🎬 <b>Salom, ${firstName}!</b>\n\n` +
+    `Bu botdan foydalanish uchun hech qanday kanalga obuna bo‘lish sharti yo‘q ✅\n\n` +
+    `🔢 Kino yoki serial kodini yuboring, va siz osonlik bilan film yoki serialni olasiz!`,
     { parse_mode: "HTML" }
   );
 });
 
 /* ======================================
-   CHANNEL POST (Database ga saqlash)
+   CHANNEL POST (Firebase ga saqlash)
 ======================================*/
-
 bot.on('channel_post', async (post) => {
   try {
     if (post.chat.id.toString() !== CHANNEL_ID) return;
 
-    /* ===== SERIAL QISM ===== */
     if (post.video && post.caption) {
       const serialInfo = extractSerialInfo(post.caption);
 
@@ -69,12 +110,10 @@ bot.on('channel_post', async (post) => {
             fileId: post.video.file_id,
             createdAt: new Date(),
           });
-
         console.log(`📺 Serial saqlandi: ${serialInfo.serialCode} | Qism: ${serialInfo.partNumber}`);
         return;
       }
 
-      /* ===== ODDIY KINO ===== */
       const code = extractMovieCode(post.caption);
       if (code) {
         await db.collection('movies').doc(code).set({
@@ -83,7 +122,6 @@ bot.on('channel_post', async (post) => {
           createdAt: new Date(),
           views: 0,
         });
-
         console.log(`🎬 Kino saqlandi: ${code}`);
       }
     }
@@ -94,9 +132,8 @@ bot.on('channel_post', async (post) => {
 });
 
 /* ======================================
-   USER MESSAGE (Kod yuboradi)
+   USER MESSAGE
 ======================================*/
-
 bot.on('message', async (msg) => {
   if (!msg.text) return;
   if (msg.text.startsWith('/')) return;
@@ -105,63 +142,34 @@ bot.on('message', async (msg) => {
   const text = msg.text.trim();
 
   try {
-    /* ===== SERIAL TEKSHIRISH ===== */
-
+    // Serial tekshirish
     const serialDoc = await db.collection('serials').doc(text).get();
-
     if (serialDoc.exists) {
       const serialData = serialDoc.data();
       const totalParts = serialData.totalParts;
-
-      const keyboard = [];
-      let row = [];
-
-      for (let i = 1; i <= totalParts; i++) {
-        row.push({
-          text: `${i}-qism`,
-          callback_data: `serial_${text}_${i}`,
-        });
-
-        if (row.length === 2) {
-          keyboard.push(row);
-          row = [];
-        }
-      }
-
-      if (row.length > 0) keyboard.push(row);
+      const keyboard = getSerialKeyboard(text, totalParts, 0); // bosh sahifa
 
       return bot.sendPhoto(chatId, serialData.posterFileId, {
-        caption: `🎬 <b>${serialData.title}</b>
-
-👇 Qismni tanlang`,
+        caption: `🎬 <b>${serialData.title}</b>\n\n👇 Qismni tanlang`,
         parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: keyboard,
-        },
+        reply_markup: { inline_keyboard: keyboard },
       });
     }
 
-    /* ===== ODDIY KINO ===== */
-
+    // Kino tekshirish
     const movieDoc = await db.collection('movies').doc(text).get();
-
     if (!movieDoc.exists) {
-      return bot.sendMessage(
-        chatId,
-        `❌ <b>Kod topilmadi</b>
-🔁 Qayta tekshiring`,
-        { parse_mode: "HTML" }
-      );
+      return bot.sendMessage(chatId, `❌ <b>Kod topilmadi</b>\n🔁 Qayta tekshiring`, { parse_mode: "HTML" });
     }
 
     const movieData = movieDoc.data();
-
     await db.collection('movies').doc(text).update({
       views: admin.firestore.FieldValue.increment(1),
     });
 
-    await bot.sendVideo(chatId, movieData.fileId, {
-      caption: movieData.caption || `🎬 Kino kodi: ${text}`,
+    const captionParts = movieData.caption ? movieData.caption.match(/(.|[\r\n]){1,800}/g) : [`🎬 Kino kodi: ${text}`];
+    captionParts.forEach((part, idx) => {
+      bot.sendVideo(chatId, movieData.fileId, { caption: `${getIcon(idx)} ${part}`, parse_mode: "HTML" });
     });
 
   } catch (err) {
@@ -171,35 +179,38 @@ bot.on('message', async (msg) => {
 });
 
 /* ======================================
-   SERIAL QISM BOSILGANDA
+   CALLBACK QUERY (Serial qism)
 ======================================*/
-
 bot.on('callback_query', async (query) => {
   try {
     const data = query.data;
-
     if (!data.startsWith('serial_')) return;
 
-    const [_, serialCode, partNumber] = data.split('_');
+    const parts = data.split('_');
 
-    const partDoc = await db
-      .collection('serial_parts')
-      .doc(`${serialCode}_${partNumber}`)
-      .get();
+    // Pagination tugmalari
+    if (parts[2] === 'nav') {
+      const serialCode = parts[1];
+      const page = parseInt(parts[3]);
+      const serialDoc = await db.collection('serials').doc(serialCode).get();
+      if (!serialDoc.exists) return bot.answerCallbackQuery(query.id, { text: "Serial topilmadi ❌", show_alert: true });
 
-    if (!partDoc.exists) {
-      return bot.answerCallbackQuery(query.id, {
-        text: "Qism topilmadi ❌",
-        show_alert: true,
-      });
+      const totalParts = serialDoc.data().totalParts;
+      const keyboard = getSerialKeyboard(serialCode, totalParts, page);
+
+      return bot.editMessageReplyMarkup(
+        { inline_keyboard: keyboard },
+        { chat_id: query.message.chat.id, message_id: query.message.message_id }
+      );
     }
 
-    const partData = partDoc.data();
+    // Qismni jo‘natish
+    const serialCode = parts[1];
+    const partNumber = parts[2];
+    const partDoc = await db.collection('serial_parts').doc(`${serialCode}_${partNumber}`).get();
+    if (!partDoc.exists) return bot.answerCallbackQuery(query.id, { text: "Qism topilmadi ❌", show_alert: true });
 
-    await bot.sendVideo(query.message.chat.id, partData.fileId, {
-      caption: `🎬 ${partNumber}-qism`,
-    });
-
+    await bot.sendVideo(query.message.chat.id, partDoc.data().fileId, { caption: `${getIcon(parseInt(partNumber) - 1)} 🎬 ${partNumber}-qism` });
     bot.answerCallbackQuery(query.id);
 
   } catch (err) {
