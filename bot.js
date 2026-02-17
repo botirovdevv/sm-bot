@@ -23,7 +23,6 @@ function extractSerialInfo(caption) {
   if (!caption) return null;
 
   const serialMatch = caption.match(/serial\s*[:\-]?\s*(\d+)/i);
-
   const partMatch =
     caption.match(/qism\s*[:\-]?\s*(\d+)/i) ||
     caption.match(/(\d+)\s*[-]?\s*qism/i);
@@ -35,7 +34,6 @@ function extractSerialInfo(caption) {
     partNumber: partMatch[1],
   };
 }
-
 
 /* ======================================
    SERIAL PAGINATION
@@ -50,10 +48,13 @@ function getSerialKeyboard(serialCode, totalParts, page = 0) {
   let row = [];
   for (let i = start; i < end; i++) {
     row.push({
-      text: `${i + 1}-qism`,                  // endi icon yo‘q
+      text: `${i + 1}-qism`,
       callback_data: `serial_${serialCode}_${i + 1}_page_${page}`,
     });
-    if (row.length === 2) { keyboard.push(row); row = []; }
+    if (row.length === 2) {
+      keyboard.push(row);
+      row = [];
+    }
   }
   if (row.length > 0) keyboard.push(row);
 
@@ -65,7 +66,6 @@ function getSerialKeyboard(serialCode, totalParts, page = 0) {
   return keyboard;
 }
 
-
 /* ======================================
    START
 =====================================*/
@@ -73,14 +73,15 @@ bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
   const firstName = msg.from.first_name || "do'st";
 
-  // Foydalanuvchini Firebase ga saqlash
   try {
     await db.collection('users').doc(chatId.toString()).set({
       chatId,
       firstName,
       createdAt: new Date(),
     }, { merge: true });
-  } catch (err) { console.error("User saqlash xatolik:", err); }
+  } catch (err) {
+    console.error("User saqlash xatolik:", err);
+  }
 
   await bot.sendMessage(
     chatId,
@@ -99,6 +100,7 @@ bot.onText(/\/message (.+)/, async (msg, match) => {
   if (chatId.toString() !== ADMIN_ID) return;
 
   const textToSend = match[1];
+  if (!textToSend) return bot.sendMessage(chatId, "❌ Xabar bo‘sh bo‘lishi mumkin emas");
 
   try {
     const usersSnapshot = await db.collection('users').get();
@@ -107,7 +109,6 @@ bot.onText(/\/message (.+)/, async (msg, match) => {
     let success = 0;
     let failed = 0;
 
-    // Telegram spamdan saqlanish uchun 200ms delay qo‘shish tavsiya etiladi
     for (const doc of usersSnapshot.docs) {
       const user = doc.data();
       try {
@@ -190,10 +191,8 @@ bot.on('message', async (msg) => {
       views: admin.firestore.FieldValue.increment(1),
     });
 
-    const captionParts = movieData.caption ? movieData.caption.match(/(.|[\r\n]){1,800}/g) : [`🎬 Kino kodi: ${text}`];
-    captionParts.forEach((part, idx) => {
-      bot.sendVideo(chatId, movieData.fileId, { caption: `${getIcon(idx)} ${part}`, parse_mode: "HTML" });
-    });
+    await bot.sendVideo(chatId, movieData.fileId, { caption: movieData.caption || `🎬 Kino kodi: ${text}` });
+
   } catch (err) {
     console.error("User message xatolik:", err);
     bot.sendMessage(chatId, "❌ Xatolik yuz berdi");
@@ -209,6 +208,8 @@ bot.on('callback_query', async (query) => {
     if (!data.startsWith('serial_')) return;
 
     const parts = data.split('_');
+
+    // Pagination tugmalari
     if (parts[2] === 'nav') {
       const serialCode = parts[1];
       const page = parseInt(parts[3]);
@@ -224,12 +225,13 @@ bot.on('callback_query', async (query) => {
       );
     }
 
+    // Qismni jo‘natish
     const serialCode = parts[1];
     const partNumber = parts[2];
     const partDoc = await db.collection('serial_parts').doc(`${serialCode}_${partNumber}`).get();
     if (!partDoc.exists) return bot.answerCallbackQuery(query.id, { text: "Qism topilmadi ❌", show_alert: true });
 
-    await bot.sendVideo(query.message.chat.id, partDoc.data().fileId, { caption: `${getIcon(parseInt(partNumber) - 1)} 🎬 ${partNumber}-qism` });
+    await bot.sendVideo(query.message.chat.id, partDoc.data().fileId, { caption: `${partNumber}-qism` });
     bot.answerCallbackQuery(query.id);
 
   } catch (err) { console.error("Callback xatolik:", err); }
